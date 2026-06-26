@@ -1,0 +1,17 @@
+{
+  "ticket_id": "TKT-001",
+  "relevant_transaction_id": null,
+  "evidence_verdict": "insufficient_data",
+  "case_type": "other",
+  "severity": "medium",
+  "department": "customer_support",
+  "agent_summary": "System warning: AI investigator failed to generate a parseable response.",
+  "recommended_next_action": "Review ticket manually. Reason: JSON parsing failed on retry.",
+  "customer_reply": "We are currently processing high volumes of tickets. A customer support representative will review your request shortly.",
+  "human_review_required": true,
+  "confidence": 0.0,
+  "reason_codes": [
+    "AI_ANALYSIS_FAILED",
+    "JSON_PARSE_ERROR"
+  ]
+}
