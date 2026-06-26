@@ -1,6 +1,6 @@
 # QueueStorm Investigator
 
-QueueStorm Investigator is a production-ready REST API service designed as an AI-powered customer support ticket investigator and router for digital financial platforms (like bKash). It accepts a customer complaint and their recent transaction history, utilizes Claude AI via the Anthropic API to classify, investigate, and route the ticket, and validates responses through custom programmatic safety post-processors.
+QueueStorm Investigator is a production-ready REST API service designed as an AI-powered customer support ticket investigator and router for digital financial platforms (like bKash). It accepts a customer complaint and their recent transaction history, utilizes Claude-compatible models via OpenRouter to classify, investigate, and route the ticket, and validates responses through custom programmatic safety post-processors.
 
 ---
 
@@ -8,7 +8,7 @@ QueueStorm Investigator is a production-ready REST API service designed as an AI
 - **Python 3.11+**
 - **FastAPI** (High-performance web framework for APIs)
 - **Uvicorn** (ASGI server implementation)
-- **Anthropic SDK** (For integration with Claude models)
+- **OpenRouter API via HTTPX** (For integration with Claude models)
 - **Pydantic v2** (For robust data validation and serialization)
 - **python-dotenv** (For environment configuration management)
 - **Docker** (For clean, isolated containerization)
@@ -39,15 +39,17 @@ pip install -r requirements.txt
 ```
 
 ### 3. Configuration
-Copy the `.env.example` to `.env` and fill in your Anthropic API Key:
+Copy the `.env.example` to `.env` and fill in your OpenRouter API key:
 ```bash
 cp .env.example .env
 ```
 Inside `.env`:
 ```env
-ANTHROPIC_API_KEY=your_actual_anthropic_api_key_here
+OPENROUTER_API_KEY=your_actual_openrouter_key_here
+OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
+OPENROUTER_SITE_URL=http://localhost:8000
+OPENROUTER_APP_NAME=QueueStorm Investigator
 PORT=8000
-ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 ```
 
 ### 4. Running the Server
@@ -67,9 +69,9 @@ docker build -t queuestorm-investigator .
 ```
 
 ### 2. Run the Container
-Run the container, passing your API Key as an environment variable:
+Run the container, passing your OpenRouter API key as an environment variable:
 ```bash
-docker run -p 8000:8000 --env ANTHROPIC_API_KEY="your_actual_key_here" queuestorm-investigator
+docker run -p 8000:8000 --env OPENROUTER_API_KEY="your_actual_key_here" queuestorm-investigator
 ```
 The service will be accessible at `http://localhost:8000`.
 
@@ -162,18 +164,18 @@ After Claude responds, the raw result is sanitized:
 ---
 
 ## MODELS
-- **Model**: claude-sonnet-4-6
-- **Provider**: Anthropic API
+- **Model**: `OPENROUTER_MODEL` default `anthropic/claude-3.5-sonnet`
+- **Provider**: OpenRouter API
 - **Why chosen**: Strong multilingual support (Bangla/Banglish), reliable structured JSON output, fast response under 30s, no GPU required
-- **Runs**: Remotely via Anthropic API
+- **Runs**: Remotely via OpenRouter API
 
 ---
 
 ## Known Limitations
-- Depends on Anthropic API availability
+- Depends on OpenRouter API availability and the selected model provider
 - Bangla language accuracy depends on Claude multilingual capability  
-- No access to real transaction database — analyzes only what is provided in the request
-- Cannot execute actual refunds or reversals — copilot only, all actions require human authorization
+- No access to real transaction database - analyzes only what is provided in the request
+- Cannot execute actual refunds or reversals - copilot only, all actions require human authorization
 
 ---
 

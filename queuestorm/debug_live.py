@@ -9,7 +9,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 from models import TicketAnalysisRequest
-from analyzer import analyze_ticket_with_claude
+from analyzer import analyze_ticket_with_openrouter
 
 request = TicketAnalysisRequest(
     ticket_id="TEST-C1",
@@ -28,10 +28,10 @@ request = TicketAnalysisRequest(
 )
 
 async def main():
-    print("Starting analyze_ticket_with_claude call...")
+    print("Starting analyze_ticket_with_openrouter call...")
     try:
-        res = await analyze_ticket_with_claude(request)
-        print("Completed analyze_ticket_with_claude!")
+        res = await analyze_ticket_with_openrouter(request)
+        print("Completed analyze_ticket_with_openrouter!")
         print("Result:")
         print(res)
     except Exception as e:

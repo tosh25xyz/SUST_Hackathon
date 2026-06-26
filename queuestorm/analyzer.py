@@ -1,22 +1,18 @@
-import os
+﻿import os
 import re
 import json
 import logging
 import httpx
 from typing import Dict, Any, Optional
-from anthropic import APIError, AuthenticationError
 from models import TicketAnalysisRequest, TicketAnalysisResponse
 from prompts import SYSTEM_PROMPT, STRICT_JSON_SYSTEM_PROMPT, build_user_prompt
 
 logger = logging.getLogger("queuestorm.analyzer")
 
-# Fetch and validate API Key
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-MODEL_NAME = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-
-# Map user-friendly model name to official Anthropic model ID if needed
-if MODEL_NAME == "claude-sonnet-4-6":
-    MODEL_NAME = "claude-3-5-sonnet-20241022"
+# OpenRouter configuration
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODEL_NAME = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
 
 def clean_and_parse_json(raw_text: str) -> Dict[str, Any]:
     """
@@ -49,75 +45,68 @@ def generate_fallback_response(request: TicketAnalysisRequest, reason: str) -> D
         "reason_codes": ["AI_ANALYSIS_FAILED", "JSON_PARSE_ERROR"]
     }
 
+async def call_openrouter(system_prompt: str, user_prompt: str, ticket_id: str, attempt: int) -> str:
+    """
+    Makes a single call to OpenRouter and returns the raw text response.
+    """
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://queuestorm.app",  # Optional but recommended by OpenRouter
+        "X-Title": "QueueStorm Investigator"
+    }
+    payload = {
+        "model": MODEL_NAME,
+        "max_tokens": 2048,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            OPENROUTER_URL,
+            headers=headers,
+            json=payload,
+            timeout=30.0
+        )
+    response.raise_for_status()
+    data = response.json()
+    # OpenRouter uses OpenAI-compatible response format
+    raw_text = data["choices"][0]["message"]["content"]
+    logger.debug(f"Raw response from OpenRouter (attempt {attempt}): {raw_text}")
+    return raw_text
+
+
 async def analyze_ticket_with_claude(request: TicketAnalysisRequest) -> Dict[str, Any]:
     """
-    Sends the ticket analysis query to Claude using the Anthropic API directly.
+    Sends the ticket analysis query to Claude via OpenRouter.
     Handles retry on JSON parse failure and falls back to a safe response on secondary failure.
     """
     # Verify API key configuration
-    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY.strip() == "" or ANTHROPIC_API_KEY == "your_key_here":
+    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY.strip() == "" or OPENROUTER_API_KEY == "your_key_here":
         if os.getenv("QUEUESTORM_SIMULATE") == "true":
             logger.warning("Running in SIMULATION mode due to missing API key.")
             return simulate_analysis(request)
-        raise RuntimeError("API Key is not configured.")
+        raise RuntimeError("OpenRouter API Key is not configured.")
 
     user_prompt = build_user_prompt(request)
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "Content-Type": "application/json"
-    }
 
     # First Attempt
     try:
-        logger.info(f"Submitting first attempt via Anthropic API for ticket {request.ticket_id}")
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers=headers,
-                json={
-                    "model": "claude-sonnet-4-6",
-                    "max_tokens": 2048,
-                    "system": SYSTEM_PROMPT,
-                    "messages": [
-                        {"role": "user", "content": user_prompt}
-                    ]
-                },
-                timeout=30.0
-            )
-
-        response.raise_for_status()
-        raw_response_content = response.json()["content"][0]["text"]
-        logger.debug(f"Raw response from Anthropic (1st attempt): {raw_response_content}")
-
+        logger.info(f"Submitting first attempt via OpenRouter for ticket {request.ticket_id}")
+        raw_response_content = await call_openrouter(SYSTEM_PROMPT, user_prompt, request.ticket_id, attempt=1)
         parsed_dict = clean_and_parse_json(raw_response_content)
         TicketAnalysisResponse(**parsed_dict)
         return parsed_dict
 
-    except (json.JSONDecodeError, Exception) as first_err:
+    except Exception as first_err:
         logger.warning(f"First analysis attempt failed for ticket {request.ticket_id}: {str(first_err)}")
 
         # Retry once with stricter instructions
         try:
-            logger.info(f"Retrying ticket {request.ticket_id} via Anthropic API with stricter prompt instructions")
-            async with httpx.AsyncClient() as client:
-                retry_response = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers=headers,
-                    json={
-                        "model": "claude-sonnet-4-6",
-                        "max_tokens": 2048,
-                        "system": STRICT_JSON_SYSTEM_PROMPT,
-                        "messages": [
-                            {"role": "user", "content": user_prompt}
-                        ]
-                    },
-                    timeout=30.0
-                )
-            retry_response.raise_for_status()
-            raw_retry_content = retry_response.json()["content"][0]["text"]
-            logger.debug(f"Raw response from Anthropic (2nd attempt): {raw_retry_content}")
-
+            logger.info(f"Retrying ticket {request.ticket_id} via OpenRouter with stricter prompt")
+            raw_retry_content = await call_openrouter(STRICT_JSON_SYSTEM_PROMPT, user_prompt, request.ticket_id, attempt=2)
             parsed_dict = clean_and_parse_json(raw_retry_content)
             TicketAnalysisResponse(**parsed_dict)
             return parsed_dict

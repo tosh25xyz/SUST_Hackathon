@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 # Enable simulation mode for analyzer to bypass Anthropic calls
 os.environ["QUEUESTORM_SIMULATE"] = "true"
-os.environ["ANTHROPIC_API_KEY"] = "your_key_here"
+os.environ["OPENROUTER_API_KEY"] = "your_key_here"
 
 from main import app
 from safety import (

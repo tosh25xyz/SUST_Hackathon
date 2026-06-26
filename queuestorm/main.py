@@ -118,7 +118,7 @@ async def analyze_ticket(request: TicketAnalysisRequest):
         raw_response = safety.generate_injection_response(request.ticket_id)
     else:
         # 2. Main LLM Analysis Loop (with built-in retries)
-        raw_response = await analyzer.analyze_ticket_with_claude(request)
+        raw_response = await analyzer.analyze_ticket_with_openrouter(request)
         
     # 3. Post-processing Sanitization (RULE 1, 2, 3, and Programmatic Routing Rules)
     sanitized_response = safety.post_process_sanitize(raw_response)
