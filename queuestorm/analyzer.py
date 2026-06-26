@@ -51,7 +51,7 @@ def generate_fallback_response(request: TicketAnalysisRequest, reason: str) -> D
 
 async def analyze_ticket_with_claude(request: TicketAnalysisRequest) -> Dict[str, Any]:
     """
-    Sends the ticket analysis query to Claude using OpenRouter API.
+    Sends the ticket analysis query to Claude using the Anthropic API directly.
     Handles retry on JSON parse failure and falls back to a safe response on secondary failure.
     """
     # Verify API key configuration
@@ -63,66 +63,65 @@ async def analyze_ticket_with_claude(request: TicketAnalysisRequest) -> Dict[str
 
     user_prompt = build_user_prompt(request)
     headers = {
-        "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json"
     }
 
     # First Attempt
     try:
-        logger.info(f"Submitting first attempt via OpenRouter for ticket {request.ticket_id}")
+        logger.info(f"Submitting first attempt via Anthropic API for ticket {request.ticket_id}")
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+                "https://api.anthropic.com/v1/messages",
                 headers=headers,
                 json={
-                    "model": MODEL_NAME,
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 2048,
+                    "system": SYSTEM_PROMPT,
                     "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt}
-                    ],
-                    "temperature": 0.0,
-                    "max_tokens": 2048
+                    ]
                 },
                 timeout=30.0
             )
-        
+
         response.raise_for_status()
-        raw_response_content = response.json()["choices"][0]["message"]["content"]
-        logger.debug(f"Raw response from OpenRouter (1st attempt): {raw_response_content}")
-        
+        raw_response_content = response.json()["content"][0]["text"]
+        logger.debug(f"Raw response from Anthropic (1st attempt): {raw_response_content}")
+
         parsed_dict = clean_and_parse_json(raw_response_content)
         TicketAnalysisResponse(**parsed_dict)
         return parsed_dict
 
     except (json.JSONDecodeError, Exception) as first_err:
         logger.warning(f"First analysis attempt failed for ticket {request.ticket_id}: {str(first_err)}")
-        
+
         # Retry once with stricter instructions
         try:
-            logger.info(f"Retrying ticket {request.ticket_id} via OpenRouter with stricter prompt instructions")
+            logger.info(f"Retrying ticket {request.ticket_id} via Anthropic API with stricter prompt instructions")
             async with httpx.AsyncClient() as client:
                 retry_response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
+                    "https://api.anthropic.com/v1/messages",
                     headers=headers,
                     json={
-                        "model": MODEL_NAME,
+                        "model": "claude-sonnet-4-6",
+                        "max_tokens": 2048,
+                        "system": STRICT_JSON_SYSTEM_PROMPT,
                         "messages": [
-                            {"role": "system", "content": STRICT_JSON_SYSTEM_PROMPT},
                             {"role": "user", "content": user_prompt}
-                        ],
-                        "temperature": 0.0,
-                        "max_tokens": 2048
+                        ]
                     },
                     timeout=30.0
                 )
             retry_response.raise_for_status()
-            raw_retry_content = retry_response.json()["choices"][0]["message"]["content"]
-            logger.debug(f"Raw response from OpenRouter (2nd attempt): {raw_retry_content}")
-            
+            raw_retry_content = retry_response.json()["content"][0]["text"]
+            logger.debug(f"Raw response from Anthropic (2nd attempt): {raw_retry_content}")
+
             parsed_dict = clean_and_parse_json(raw_retry_content)
             TicketAnalysisResponse(**parsed_dict)
             return parsed_dict
-            
+
         except Exception as second_err:
             logger.error(f"Second attempt also failed for ticket {request.ticket_id}: {str(second_err)}")
             return generate_fallback_response(request, "JSON parsing failed on retry")
